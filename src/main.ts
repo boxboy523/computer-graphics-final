@@ -1,16 +1,27 @@
-import * as Th from 'three';
+import * as THREE from 'three';
+
+import { GameState } from './state';
+import { Map } from './map';
+import { CuboidEntity } from './entities/cuboid';
+import { Player } from './entities/player';
 
 const canvas = document.getElementById('canvas_main') as HTMLCanvasElement;
-const renderer = new Th.WebGLRenderer({ canvas });
-const scene = new Th.Scene();
-const camera = new Th.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const timer = new THREE.Timer();
+timer.connect(document);
 
-const geometry = new Th.BoxGeometry();
-const material = new Th.MeshBasicMaterial({ color: 0x00ff00 });
-const cube = new Th.Mesh(geometry, material);
-scene.add(cube);
+const map = await Map.create('assets/backrooms.glb');
+const state = new GameState(map);
+map.addToScene(state);
+const player = new Player(state);
+state.spawnEntity(
+    new CuboidEntity(state, new THREE.Vector3(0.5, 0.5, 0.5), new THREE.Vector3(0, 1, 0))
+);
+state.spawnEntity(player);
+state.spawnControlable(player);
+state.camera = player.camera;
 
-function resize(width: number, height: number) {
+function resize(width: number, height: number, camera: THREE.PerspectiveCamera) {
     canvas.width = width;
     canvas.height = height;
     renderer.setSize(width, height);
@@ -18,15 +29,14 @@ function resize(width: number, height: number) {
     camera.updateProjectionMatrix();
 }
 
-resize(window.innerWidth, window.innerHeight);
-window.addEventListener('resize', () => resize(window.innerWidth, window.innerHeight));
+resize(window.innerWidth, window.innerHeight, state.camera);
+window.addEventListener('resize', () => resize(window.innerWidth, window.innerHeight, state.camera));
 
-camera.position.z = 5;
-
-function animate() {
+function animate(timestamp: number = 0) {
     requestAnimationFrame(animate);
-    cube.rotation.x += 0.01;
-    cube.rotation.y += 0.01;
-    renderer.render(scene, camera);
+    timer.update(timestamp);
+    const delta = timer.getDelta();
+    state.update(delta);
+    renderer.render(state.scene, state.camera);
 }
 animate();
