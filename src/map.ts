@@ -8,7 +8,7 @@ import { loadGLTF } from './gltf';
 export class Map {
     path!: string;
     model!: THREE.Group;
-    colliderDescs!: RAPIER.ColliderDesc[] = [];
+    colliderDescs: RAPIER.ColliderDesc[] = [];
     private constructor() {}
 
     private async load(path: string) {
