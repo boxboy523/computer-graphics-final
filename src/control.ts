@@ -1,4 +1,3 @@
-
 export interface Controlable {
     control: (keys: Record<string, boolean>) => void;
 }
@@ -6,24 +5,40 @@ export interface Controlable {
 export class Controller {
     keys: Record<string, boolean> = {};
     controlable: Controlable[] = [];
+
     constructor() {
-        document.addEventListener('keydown', e =>
-            {
-                this.keys[e.code] = true;
-                this.control_callback();
-            });
+        document.addEventListener('keydown', e => {
+            this.keys[e.code] = true;
+            this.control_callback();
+        });
+
         document.addEventListener('keyup', e => {
             this.keys[e.code] = false;
             this.control_callback();
         });
+
+        document.addEventListener('mousedown', e => {
+            if (e.button === 0) {
+                this.keys["MouseLeft"] = true;
+                this.control_callback();
+            }
+        });
+
+        document.addEventListener('mouseup', e => {
+            if (e.button === 0) {
+                this.keys["MouseLeft"] = false;
+                this.control_callback();
+            }
+        });
+
         document.addEventListener('mousemove', _ => {
             this.control_callback();
-        })
+        });
     }
 
     control_callback() {
-       for (const c of this.controlable) {
-           c.control(this.keys)
+        for (const c of this.controlable) {
+            c.control(this.keys);
         }
     }
 }
