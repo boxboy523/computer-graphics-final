@@ -32,6 +32,45 @@ function resize(width: number, height: number, camera: THREE.PerspectiveCamera) 
 resize(window.innerWidth, window.innerHeight, state.camera);
 window.addEventListener('resize', () => resize(window.innerWidth, window.innerHeight, state.camera));
 
+function createCrosshair() {
+    const crosshair = document.createElement('div');
+    crosshair.id = 'crosshair';
+
+    crosshair.style.position = 'fixed';
+    crosshair.style.left = '50%';
+    crosshair.style.top = '50%';
+    crosshair.style.width = '20px';
+    crosshair.style.height = '20px';
+    crosshair.style.transform = 'translate(-50%, -50%)';
+    crosshair.style.pointerEvents = 'none';
+    crosshair.style.zIndex = '9999';
+
+    const horizontal = document.createElement('div');
+    horizontal.style.position = 'absolute';
+    horizontal.style.left = '0';
+    horizontal.style.top = '9px';
+    horizontal.style.width = '20px';
+    horizontal.style.height = '2px';
+    horizontal.style.background = 'white';
+    horizontal.style.opacity = '0.8';
+
+    const vertical = document.createElement('div');
+    vertical.style.position = 'absolute';
+    vertical.style.left = '9px';
+    vertical.style.top = '0';
+    vertical.style.width = '2px';
+    vertical.style.height = '20px';
+    vertical.style.background = 'white';
+    vertical.style.opacity = '0.8';
+
+    crosshair.appendChild(horizontal);
+    crosshair.appendChild(vertical);
+
+    document.body.appendChild(crosshair);
+}
+
+createCrosshair();
+
 function animate(timestamp: number = 0) {
     requestAnimationFrame(animate);
     timer.update(timestamp);
