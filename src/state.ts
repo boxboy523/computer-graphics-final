@@ -13,7 +13,7 @@ export class GameState {
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
     map: Map;
     entities: Entity[] = [];
-    controller = new Controller();
+    controller = new Controller(this.camera);
 
     constructor(map: Map) {
         this.map = map;

@@ -7,13 +7,10 @@ import { GameState } from '../state';
 import type { Controlable } from '../control';
 import { CuboidEntity } from './cuboid';
 
-const canvas = document.getElementById('canvas_main') as HTMLCanvasElement;
-
 export class Player implements Entity, Controlable {
     mesh = new THREE.Mesh();
     body: RAPIER.RigidBody;
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
-    pointorLockControls: PointerLockControls;
+    camera = THREE.Camera.prototype;
 
     movementSpeed: number = 5;
     jumpStrength: number = 5;
@@ -41,6 +38,8 @@ export class Player implements Entity, Controlable {
     floorCloseThreshold: number = 0.25;
     floorBiasedRatio: number = 0.90;
 
+    direction = new THREE.Vector3();
+
     constructor(state: GameState, position: THREE.Vector3 = new THREE.Vector3(0, 1.3, 0)) {
         this.state = state;
 
@@ -54,41 +53,12 @@ export class Player implements Entity, Controlable {
             RAPIER.ColliderDesc.capsule(0.4, 0.4),
             this.body
         );
+        this.camera = state.camera;
 
         this.camera.position.copy(position);
-
-        this.pointorLockControls = new PointerLockControls(this.camera, document.body);
-        this.pointorLockControls.pointerSpeed = 2.0;
-
-        // 위로 최대 89도, 아래로 최대 60도까지만 볼 수 있게 제한
-        const maxLookUpDegree = 89;
-        const maxLookDownDegree = 60;
-
-        this.pointorLockControls.minPolarAngle = THREE.MathUtils.degToRad(90 - maxLookUpDegree);
-        this.pointorLockControls.maxPolarAngle = THREE.MathUtils.degToRad(90 + maxLookDownDegree);
-
-        canvas.addEventListener('click', () => {
-            if (!this.pointorLockControls.isLocked) {
-                this.pointorLockControls.lock();
-            }
-        });
-
-        document.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
-            if (!this.pointorLockControls.isLocked) return;
-
-            this.pickObject();
-        });
-
-        document.addEventListener('mouseup', (e) => {
-            if (e.button !== 0) return;
-            if (!this.pointorLockControls.isLocked) return;
-
-            this.dropObject();
-        });
     }
 
-    control(keys: Record<string, boolean>) {
+    control(keys: Record<string, boolean>, plc: PointerLockControls) {
         const vel = this.body.linvel();
         const move = new THREE.Vector3();
 
@@ -96,11 +66,16 @@ export class Player implements Entity, Controlable {
         if (keys['KeyS']) move.z -= 1;
         if (keys['KeyA']) move.x += 1;
         if (keys['KeyD']) move.x -= 1;
+        if (keys['MouseLeft']) {
+            this.pickObject();
+        }
+        if (keys['MouseLeft'] === false) {
+            this.dropObject();
+        }
 
-        const direction = new THREE.Vector3();
-        this.pointorLockControls.getDirection(direction);
+        plc.getDirection(this.direction);
 
-        const yaw = Math.atan2(direction.x, direction.z);
+        const yaw = Math.atan2(this.direction.x, this.direction.z);
         move.applyEuler(new THREE.Euler(0, yaw, 0));
 
         if (move.lengthSq() > 0) {
@@ -119,24 +94,21 @@ export class Player implements Entity, Controlable {
         );
     }
 
-update(delta: number) {
-    const position = this.body.translation();
+    update(delta: number) {
+        const position = this.body.translation();
 
-    this.camera.position.set(position.x, position.y + 0.5, position.z);
+        this.camera.position.set(position.x, position.y + 0.5, position.z);
 
-    if (this.heldObject !== null) {
-        this.moveHeldObjectInFrontOfCamera(delta);
+        if (this.heldObject !== null) {
+            this.moveHeldObject(delta);
+        }
     }
-}
 
     private pickObject() {
         if (this.heldObject !== null) return;
 
         const raycaster = new THREE.Raycaster();
-        const direction = new THREE.Vector3();
-
-        this.pointorLockControls.getDirection(direction);
-        raycaster.set(this.camera.position, direction);
+        raycaster.set(this.camera.position, this.direction);
 
         const cuboids = this.state.entities.filter(
             (entity): entity is CuboidEntity => entity instanceof CuboidEntity
@@ -177,77 +149,62 @@ update(delta: number) {
         this.heldObject = null;
     }
 
-    private isCubeCloseToFloor(position: THREE.Vector3): boolean {
-    if (this.heldObject === null) return false;
-
-    const rayStartY = position.y + 1.0;
-
-    const downRay = new RAPIER.Ray(
-        { x: position.x, y: rayStartY, z: position.z },
-        { x: 0, y: -1, z: 0 }
-    );
-
-    const downHit = this.state.world.castRay(
-        downRay,
-        10,
-        true,
-        undefined,
-        undefined,
-        this.heldObject.collider,
-        this.heldObject.body
-    );
-
-    if (downHit === null) return false;
-
-    const floorY = rayStartY - downHit.timeOfImpact;
-    const cubeBottomY = position.y - this.heldObject.size.y / 2;
-
-    const distanceToFloor = cubeBottomY - floorY;
-
-    return distanceToFloor < this.floorCloseThreshold;
-}
-
-    private moveHeldObjectInFrontOfCamera(delta: number) {
+    private moveHeldObject(delta: number) {
         if (this.heldObject === null) return;
 
-        const direction = new THREE.Vector3();
-        this.pointorLockControls.getDirection(direction);
+        let direction = this.direction.clone();
         direction.normalize();
 
-        const origin = this.camera.position.clone();
+        let origin = this.camera.position.clone();
+        let or
 
         const wallSearchDistance = 100.0;
         const minHoldDistance = 1.2;
         const maxHoldDistance = 30.0;
         const wallMargin = 0.4;
 
-        const rayStartOffset = 0.8;
-        const rayOrigin = origin
-            .clone()
-            .add(direction.clone().multiplyScalar(rayStartOffset));
+        const shape = this.heldObject.collider.shape;
+        const shapeRot = this.heldObject.body.rotation();
 
-        const forwardRay = new RAPIER.Ray(
-            { x: rayOrigin.x, y: rayOrigin.y, z: rayOrigin.z },
-            { x: direction.x, y: direction.y, z: direction.z }
-        );
-
-        const forwardHit = this.state.world.castRay(
-            forwardRay,
+        const hit = this.state.world.castShape(
+            { x: origin.x, y: origin.y, z: origin.z },
+            shapeRot,
+            direction,
+            shape,
+            0.1,
             wallSearchDistance,
             true,
             undefined,
             undefined,
             this.heldObject.collider,
-            this.heldObject.body
+            this.body,
         );
 
-        let targetDistance = this.currentHoldDistance;
+        // const rayStartOffset = 0.8;
+        // const rayOrigin = origin
+        //     .clone()
+        //     .add(direction.clone().multiplyScalar(rayStartOffset));
+
+        // const forwardRay = new RAPIER.Ray(
+        //     { x: rayOrigin.x, y: rayOrigin.y, z: rayOrigin.z },
+        //     { x: direction.x, y: direction.y, z: direction.z }
+        // );
+
+        // const forwardHit = this.state.world.castRay(
+        //     forwardRay,
+        //     wallSearchDistance,
+        //     true,
+        //     undefined,
+        //     undefined,
+        //     this.heldObject.collider,
+        //     this.heldObject.body
+        // );
 
         const minDistanceByScale = this.baseHoldDistance * (this.minScale / this.pickupScale);
-        targetDistance = Math.max(targetDistance, minDistanceByScale);
+        let targetDistance = Math.max(this.currentHoldDistance, minDistanceByScale);
 
-        if (forwardHit !== null) {
-            const wallDistance = forwardHit.timeOfImpact + rayStartOffset;
+        if (hit !== null) {
+            const wallDistance = hit.time_of_impact;
 
             if (Number.isFinite(wallDistance)) {
                 const middleDistance = wallDistance / 2;

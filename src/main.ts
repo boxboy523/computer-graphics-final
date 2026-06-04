@@ -19,7 +19,6 @@ state.spawnEntity(
 );
 state.spawnEntity(player);
 state.spawnControlable(player);
-state.camera = player.camera;
 
 function resize(width: number, height: number, camera: THREE.PerspectiveCamera) {
     canvas.width = width;
