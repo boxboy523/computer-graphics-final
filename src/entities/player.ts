@@ -76,8 +76,8 @@ export class Player implements Entity, Controlable {
         const move = new THREE.Vector3();
 
         if (c.keydown['KeyF']) {
-            this.noclip = !this.noclip;
-            this.collider.setSensor(this.noclip);
+            //this.noclip = !this.noclip;
+            //this.collider.setSensor(this.noclip);
         }
 
         if (this.noclip) {
@@ -248,7 +248,7 @@ export class Player implements Entity, Controlable {
 
         const hit = hits[0];
 
-        if (hit.distance > 100){
+        if (hit.distance > 100 || hit.distance < 1.0){
             return;
         }
 
