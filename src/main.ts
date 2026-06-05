@@ -53,7 +53,7 @@ function state_second(map: Map): GameState {
         [new CuboidEntity(state, new THREE.Vector3(0.5, 0.5, 0.5), new THREE.Vector3(0, 1, 0)),
          new CuboidEntity(state, new THREE.Vector3(0.5, 0.5, 0.5), new THREE.Vector3(2, 1, 0)),
          new CuboidEntity(state, new THREE.Vector3(0.05, 0.1, 1.0), new THREE.Vector3(2, 1, 0)),
-         new DetectorEntity(state, new THREE.Vector3(2, 2, 2), new THREE.Vector3(3, 1, -1), () => {curState = state_first(map1); console.log("colide")}, new Set([player.body.collider(0).handle]), true)]
+         new DetectorEntity(state, new THREE.Vector3(2, 2, 2), new THREE.Vector3(7, 1, -1), () => {state.controller.pointorLockControls.unlock(); curState = state_first(map1); console.log("colide")}, new Set([player.body.collider(0).handle]), true)]
     );
 
     return state;
