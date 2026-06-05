@@ -10,7 +10,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 const timer = new THREE.Timer();
 timer.connect(document);
 
-const map = await Map.create('public/assets/Room.glb');
+const map = await Map.create('assets/Room.glb');
 const state = new GameState(map);
 map.addToScene(state);
 const player = new Player(state);
