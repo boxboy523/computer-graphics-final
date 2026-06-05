@@ -13,7 +13,7 @@ export class GameState {
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
     map: Map;
     entities: Entity[] = [];
-    controller = new Controller();
+    controller = new Controller(this.camera);
 
     constructor(map: Map) {
         this.map = map;
@@ -26,8 +26,14 @@ export class GameState {
         this.scene.add(ambientLight);
     }
 
-    spawnEntity(entity: Entity) {
-        this.entities.push(entity);
+    spawnEntity(entity: Entity | Entity[]) {
+        if (Array.isArray(entity)) {
+            for (const e of entity) {
+                this.entities.push(e);
+            }
+        } else {
+            this.entities.push(entity);
+        }
     }
 
     spawnControlable(controlable: Controlable) {
