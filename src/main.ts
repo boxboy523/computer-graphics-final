@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import { GameState } from './state';
 import { Map } from './map';
+import { CuboidEntity } from './entities/cuboid';
 import { DetectorEntity } from './entities/detector';
 import { Player } from './entities/player';
 
@@ -9,35 +10,55 @@ const canvas = document.getElementById('canvas_main') as HTMLCanvasElement;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 const timer = new THREE.Timer();
 timer.connect(document);
+const map1 = await Map.create('assets/Room.glb');
+const map2 = await Map.create('assets/Untitled.glb');
 
-const map = await Map.create('assets/Room.glb');
-const state = new GameState(map);
-map.addToScene(state);
-const player = new Player(state);
-// state.spawnEntity(
-//     new CuboidEntity(state, new THREE.Vector3(0.5, 0.5, 0.5), new THREE.Vector3(0, 1, 0))
-// );
+function state_first(map: Map): GameState {
+    let state = new GameState(map);
+    map.addToScene(state);
+    const player = new Player(state);
 
-function enterLoop() {
-    let pos = player.body.translation();
-    pos.x += 25;
-    player.body.setTranslation(pos, true);
+    function enterLoop() {
+        let pos = player.body.translation();
+        pos.x += 25;
+        player.body.setTranslation(pos, true);
+    }
+
+    state.spawnEntity(
+        new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(17.114, 1.5, -44), enterLoop, new Set([player.body.collider(0).handle]))
+    );
+
+    state.spawnEntity(
+        [new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(42.114, 1.5, -44), () => {player.enterCheckPoint(4)}, new Set([player.body.collider(0).handle])),
+         new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(42.114, 1.5, -25.5), () => {player.enterCheckPoint(1)}, new Set([player.body.collider(0).handle])),
+         new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(23.614, 1.5, -25.5), () => {player.enterCheckPoint(2)}, new Set([player.body.collider(0).handle])),
+         new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(23.614, 1.5, -44), () => {player.enterCheckPoint(3)}, new Set([player.body.collider(0).handle])),
+        ]
+    );
+
+    state.spawnEntity(player);
+    state.spawnControlable(player);
+
+    return state;
 }
 
-state.spawnEntity(
-    new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(17.114, 1.5, -44), enterLoop, new Set([player.body.collider(0)]))
-)
+function state_second(map: Map): GameState {
+    let state = new GameState(map);
+    map.addToScene(state);
+    const player = new Player(state);
+    state.spawnEntity(player);
+    state.spawnControlable(player);
 
-state.spawnEntity(
-    [new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(42.114, 1.5, -44), () => {player.enterCheckPoint(4)}, new Set([player.body.collider(0)])),
-     new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(42.114, 1.5, -25.5), () => {player.enterCheckPoint(1)}, new Set([player.body.collider(0)])),
-     new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(23.614, 1.5, -25.5), () => {player.enterCheckPoint(2)}, new Set([player.body.collider(0)])),
-     new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(23.614, 1.5, -44), () => {player.enterCheckPoint(3)}, new Set([player.body.collider(0)])),
-    ]
-)
+    state.spawnEntity(
+        [new CuboidEntity(state, new THREE.Vector3(0.5, 0.5, 0.5), new THREE.Vector3(0, 1, 0)),
+         new CuboidEntity(state, new THREE.Vector3(0.5, 0.5, 0.5), new THREE.Vector3(2, 1, 0)),
+         new CuboidEntity(state, new THREE.Vector3(0.05, 0.1, 1.0), new THREE.Vector3(2, 1, 0)),
+         new DetectorEntity(state, new THREE.Vector3(2, 2, 2), new THREE.Vector3(3, 1, -1), () => {curState = state_first(map1); console.log("colide")}, new Set([player.body.collider(0).handle]), true)]
+    );
 
-state.spawnEntity(player);
-state.spawnControlable(player);
+    return state;
+}
+let curState = state_second(map2);
 
 function resize(width: number, height: number, camera: THREE.PerspectiveCamera) {
     canvas.width = width;
@@ -47,12 +68,9 @@ function resize(width: number, height: number, camera: THREE.PerspectiveCamera) 
     camera.updateProjectionMatrix();
 }
 
-resize(window.innerWidth, window.innerHeight, state.camera);
-window.addEventListener('resize', () => resize(window.innerWidth, window.innerHeight, state.camera));
+resize(window.innerWidth, window.innerHeight, curState.camera);
+window.addEventListener('resize', () => resize(window.innerWidth, window.innerHeight, curState.camera));
 
-import Stats from 'three/examples/jsm/libs/stats.module.js';
-const stats = new Stats();
-document.body.appendChild(stats.dom);
 
 function createCrosshair() {
     const crosshair = document.createElement('div');
@@ -95,12 +113,11 @@ createCrosshair();
 
 function animate(timestamp: number = 0) {
     requestAnimationFrame(animate);
-    stats.update();
     timer.update(timestamp);
     const delta = timer.getDelta();
-    state.update(delta);
-    state.controller.control_callback();
-    renderer.render(state.scene, state.camera);
+    curState.update(delta);
+    curState.controller.control_callback();
+    renderer.render(curState.scene, curState.camera);
     renderer.info.reset();
 }
 animate();

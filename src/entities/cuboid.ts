@@ -17,7 +17,7 @@ export class CuboidEntity implements Entity {
         state: GameState,
         size: THREE.Vector3 = new THREE.Vector3(1, 1, 1),
         position: THREE.Vector3 = new THREE.Vector3(0, 0, 0),
-        material: THREE.Material = new THREE.MeshStandardMaterial({ color: 0x00ff00 }),
+        material: THREE.Material = new THREE.MeshStandardMaterial({ color: 0x0000ff }),
         dynamic: boolean = true
     ) {
         this.baseSize = size.clone();

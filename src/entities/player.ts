@@ -9,12 +9,19 @@ import { CuboidEntity } from './cuboid';
 export class Player implements Entity, Controlable {
     mesh = new THREE.Mesh();
     body: RAPIER.RigidBody;
+    collider: RAPIER.Collider;
+    characterController: RAPIER.KinematicCharacterController;
+    verticalVelocity: number = 0;
+    desiredHorizontal: THREE.Vector3 = new THREE.Vector3();
+    relativeRot: THREE.Quaternion = new THREE.Quaternion();
     camera = THREE.Camera.prototype;
 
     movementSpeed: number = 5;
-    jumpStrength: number = 5;
+    jumpStrength: number = 4;
     zoneSwitched: boolean = false;
     switchZoneCooldown: number = 0;
+
+    maxAngularRatio: number = 10.0;
 
     state: GameState;
 
@@ -48,32 +55,32 @@ export class Player implements Entity, Controlable {
         this.state = state;
 
         this.body = state.world.createRigidBody(
-            RAPIER.RigidBodyDesc.dynamic()
+            RAPIER.RigidBodyDesc.kinematicPositionBased()
                 .setTranslation(position.x, position.y, position.z)
-                .lockRotations()
         );
 
-        state.world.createCollider(
+        this.collider = state.world.createCollider(
             RAPIER.ColliderDesc.capsule(0.4, 0.4),
             this.body
         );
-        this.camera = state.camera;
 
+        this.characterController = state.world.createCharacterController(0.01);
+        this.characterController.enableAutostep(0.3, 0.2, true);
+        this.characterController.enableSnapToGround(0.3);
+
+        this.camera = state.camera;
         this.camera.position.copy(position);
     }
 
     control(c: Controller) {
-        const vel = this.body.linvel();
         const move = new THREE.Vector3();
+
         if (c.keydown['KeyF']) {
-            this.noclip = !this.noclip;
-            this.body.setGravityScale(this.noclip ? 0 : 1, true);
-            //this.body.setEnabledTranslations(true, true, true, true);
-            this.body.collider(0).setSensor(this.noclip);
+            //this.noclip = !this.noclip;
+            //this.collider.setSensor(this.noclip);
         }
 
         if (this.noclip) {
-            const move = new THREE.Vector3();
             c.pointorLockControls.getDirection(this.direction);
             if (c.keys['KeyW']) move.addScaledVector(this.direction, 1);
             if (c.keys['KeyS']) move.addScaledVector(this.direction, -1);
@@ -87,10 +94,14 @@ export class Player implements Entity, Controlable {
             }
             if (move.lengthSq() > 0) move.normalize().multiplyScalar(this.movementSpeed);
             const pos = this.body.translation();
-            this.body.setTranslation({ x: pos.x + move.x * 0.016, y: pos.y + move.y * 0.016, z: pos.z + move.z * 0.016 }, true);
-            this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+            this.body.setNextKinematicTranslation({
+                x: pos.x + move.x * 0.016,
+                y: pos.y + move.y * 0.016,
+                z: pos.z + move.z * 0.016
+            });
             return;
-         }
+        }
+
         if (c.keys['KeyW']) move.z += 1;
         if (c.keys['KeyS']) move.z -= 1;
         if (c.keys['KeyA']) move.x += 1;
@@ -111,22 +122,53 @@ export class Player implements Entity, Controlable {
             move.normalize().multiplyScalar(this.movementSpeed);
         }
 
-        const jump = c.keys['Space'] && Math.abs(vel.y) < 0.05 ? this.jumpStrength : 0;
+        // 점프: 바닥에 있을 때만
+        if (c.keys['Space'] && this.characterController.computedGrounded()) {
+            this.verticalVelocity = this.jumpStrength;
+        }
 
-        this.body.setLinvel(
-            {
-                x: move.x,
-                y: vel.y + jump,
-                z: move.z
-            },
-            true
-        );
+        // 수평 이동량을 멤버에 저장해서 update에서 KCC에 넘김
+        this.desiredHorizontal = move;
     }
 
     update(delta: number) {
-        const position = this.body.translation();
         this.switchZoneCooldown = Math.max(0, this.switchZoneCooldown - delta);
 
+        if (!this.noclip) {
+            // 중력 누적
+            const gravity = -9.81;
+            if (this.characterController.computedGrounded() && this.verticalVelocity <= 0) {
+                this.verticalVelocity = 0;
+            } else {
+                this.verticalVelocity += gravity * delta;
+            }
+
+            // 목표 이동량 = 수평(속도*delta) + 수직
+            const desired = {
+                x: this.desiredHorizontal.x * delta,
+                y: this.verticalVelocity * delta,
+                z: this.desiredHorizontal.z * delta,
+            };
+
+            // KCC가 충돌 보정한 이동량 계산 (들고 있는 블록은 제외)
+            this.characterController.computeColliderMovement(
+                this.collider,
+                desired,
+                RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+                undefined,
+                (collider) => collider !== this.heldObject?.collider
+            );
+
+            const corrected = this.characterController.computedMovement();
+            const pos = this.body.translation();
+            this.body.setNextKinematicTranslation({
+                x: pos.x + corrected.x,
+                y: pos.y + corrected.y,
+                z: pos.z + corrected.z,
+            });
+        }
+
+        const position = this.body.translation();
         this.camera.position.set(position.x, position.y + 0.5, position.z);
 
         this.checkWallInFront();
@@ -189,8 +231,7 @@ export class Player implements Entity, Controlable {
     private pickObject() {
         if (this.heldObject !== null) return;
 
-        const raycaster = new THREE.Raycaster();
-        raycaster.set(this.camera.position, this.direction);
+        this.updateRaycaster();
 
         const cuboids = this.state.entities.filter(
             (entity): entity is CuboidEntity => entity instanceof CuboidEntity
@@ -201,7 +242,7 @@ export class Player implements Entity, Controlable {
         }
 
         const meshes = cuboids.map(cuboid => cuboid.mesh);
-        const hits = raycaster.intersectObjects(meshes, false);
+        const hits = this.raycaster.intersectObjects(meshes, false);
 
         if (hits.length === 0) return;
 
@@ -215,6 +256,10 @@ export class Player implements Entity, Controlable {
 
         if (!picked) return;
 
+        const pickedSize = picked.baseSize.clone().multiplyScalar(picked.currentScale);
+        const angularRatio = pickedSize.length() / Math.max(hit.distance, 0.1);
+        if (angularRatio > this.maxAngularRatio) return;
+
         this.heldObject = picked;
 
         // 집은 순간의 거리 저장
@@ -225,9 +270,22 @@ export class Player implements Entity, Controlable {
 
         // 현재 큐브의 실제 scale을 저장
         this.pickupScale = picked.currentScale;
+
+        const camQuat = new THREE.Quaternion();
+        this.camera.getWorldQuaternion(camQuat);
+        const blockRot = picked.body.rotation();
+        const blockQuat = new THREE.Quaternion(blockRot.x, blockRot.y, blockRot.z, blockRot.w);
+        this.relativeRot = camQuat.clone().invert().multiply(blockQuat);
+
+        picked.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+        picked.collider.setSensor(true);
     }
 
     private dropObject() {
+        if (this.heldObject !== null) {
+            this.heldObject.collider.setSensor(false);
+            this.heldObject.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+        }
         this.heldObject = null;
     }
 
@@ -242,17 +300,19 @@ export class Player implements Entity, Controlable {
         const wallSearchDistance = 100.0;
         const minHoldDistance = 1.2;
         const maxHoldDistance = 30.0;
-        const wallMargin = 0.4;
 
-        const shape = this.heldObject.collider.shape;
-        const shapeRot = this.heldObject.body.rotation();
+        const camQuat = new THREE.Quaternion();
+        this.camera.getWorldQuaternion(camQuat);
+        const finalQuat = camQuat.clone().multiply(this.relativeRot);
+        const shapeRot = { x: finalQuat.x, y: finalQuat.y, z: finalQuat.z, w: finalQuat.w };
 
-        const hit = this.state.world.castShape(
+        // 1. ray로 벽까지 거리 파악 (스케일 무관)
+        const ray = new RAPIER.Ray(
             { x: origin.x, y: origin.y, z: origin.z },
-            shapeRot,
-            direction,
-            shape,
-            0.1,
+            { x: direction.x, y: direction.y, z: direction.z }
+        );
+        const rayHit = this.state.world.castRay(
+            ray,
             wallSearchDistance,
             true,
             undefined,
@@ -260,75 +320,53 @@ export class Player implements Entity, Controlable {
             this.heldObject.collider,
             this.body,
         );
+        const wallDistance = rayHit !== null ? rayHit.timeOfImpact : wallSearchDistance;
 
-        // const rayStartOffset = 0.8;
-        // const rayOrigin = origin
-        //     .clone()
-        //     .add(direction.clone().multiplyScalar(rayStartOffset));
-
-        // const forwardRay = new RAPIER.Ray(
-        //     { x: rayOrigin.x, y: rayOrigin.y, z: rayOrigin.z },
-        //     { x: direction.x, y: direction.y, z: direction.z }
-        // );
-
-        // const forwardHit = this.state.world.castRay(
-        //     forwardRay,
-        //     wallSearchDistance,
-        //     true,
-        //     undefined,
-        //     undefined,
-        //     this.heldObject.collider,
-        //     this.heldObject.body
-        // );
-
+        // 2. 벽 거리의 0.9배부터 0.05씩 당기며 AABB 충돌 없는 최대 거리 탐색
         const minDistanceByScale = this.baseHoldDistance * (this.minScale / this.pickupScale);
-        let targetDistance = Math.max(this.currentHoldDistance, minDistanceByScale);
+        const minAllowedDistance = Math.max(minHoldDistance, minDistanceByScale);
 
-        if (hit !== null) {
-            const wallDistance = hit.time_of_impact;
+        let targetDistance = minAllowedDistance;
 
-            if (Number.isFinite(wallDistance)) {
-                const middleDistance = wallDistance / 2;
+        for (let ratio = 0.9; ratio >= 0.1; ratio -= 0.05) {
+            const dist = THREE.MathUtils.clamp(
+                wallDistance * ratio,
+                minAllowedDistance,
+                maxHoldDistance
+            );
 
-                const previewScaleFactor = THREE.MathUtils.clamp(
-                    this.pickupScale * (middleDistance / this.baseHoldDistance),
-                    this.minScale,
-                    this.maxScale
-                );
+            const pos = origin
+                .clone()
+                .add(direction.clone().multiplyScalar(dist));
 
-                const scaledSize = this.heldObject.baseSize
-                    .clone()
-                    .multiplyScalar(previewScaleFactor);
+            // 이 거리 기준 스케일로 shape 재생성 (스케일 변동 반영)
+            const scaleFactor = THREE.MathUtils.clamp(
+                this.pickupScale * (dist / this.baseHoldDistance),
+                this.minScale,
+                this.maxScale
+            );
+            const scaledSize = this.heldObject.baseSize
+                .clone()
+                .multiplyScalar(scaleFactor);
+            const shape = new RAPIER.Cuboid(
+                scaledSize.x / 2,
+                scaledSize.y / 2,
+                scaledSize.z / 2
+            );
 
-                const cubeRadius = scaledSize.length() / 2;
+            const collision = this.state.world.intersectionWithShape(
+                { x: pos.x, y: pos.y, z: pos.z },
+                shapeRot,
+                shape,
+                undefined,
+                undefined,
+                this.heldObject.collider,
+                this.body,
+            );
 
-                const maxSafeDistance = wallDistance - cubeRadius - wallMargin;
-
-                const minDistanceByScale =
-                    this.baseHoldDistance * (this.minScale / this.pickupScale);
-
-                const minAllowedDistance = Math.max(
-                    minHoldDistance,
-                    minDistanceByScale
-                );
-
-                if (maxSafeDistance <= 0) {
-                    targetDistance = 0.3;
-                } else if (maxSafeDistance < minAllowedDistance) {
-                    // 벽이 너무 가까우면 minScale 조건보다 벽 통과 방지를 우선
-                    targetDistance = maxSafeDistance;
-                } else {
-                    targetDistance = middleDistance;
-
-                    // 너무 가까워져서 minScale보다 작아지는 것 방지
-                    targetDistance = Math.max(targetDistance, minAllowedDistance);
-
-                    // 벽 통과 방지
-                    targetDistance = Math.min(targetDistance, maxSafeDistance);
-
-                    // 너무 멀어지는 것 방지
-                    targetDistance = Math.min(targetDistance, maxHoldDistance);
-                }
+            if (collision === null) {
+                targetDistance = dist;
+                break;
             }
         }
 
@@ -344,13 +382,11 @@ export class Player implements Entity, Controlable {
             .add(direction.clone().multiplyScalar(this.currentHoldDistance));
 
         this.heldObject.body.setTranslation(
-            {
-                x: holdPosition.x,
-                y: holdPosition.y,
-                z: holdPosition.z
-            },
+            { x: holdPosition.x, y: holdPosition.y, z: holdPosition.z },
             true
         );
+
+        this.heldObject.body.setRotation(shapeRot, true);
 
         this.heldObject.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
         this.heldObject.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
