@@ -23,6 +23,13 @@ export class Map {
             const vertices = new Float32Array(geo.attributes.position.array);
             const indices = new Uint32Array(geo.index!.array);
             this.colliderDescs.push(RAPIER.ColliderDesc.trimesh(vertices, indices));
+            const oldMat = child.material;
+            const emissive = oldMat.emissive;
+            const isEmissive = emissive.r > 0 || emissive.g > 0 || emissive.b > 0;
+
+            child.material = isEmissive
+                ? new THREE.MeshBasicMaterial({ color: emissive.clone(), map: oldMat.emissiveMap, side: THREE.DoubleSide })
+                : new THREE.MeshLambertMaterial({ color: oldMat.color.clone(), map: oldMat.map, side: THREE.DoubleSide });
         });
     }
 

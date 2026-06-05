@@ -4,11 +4,12 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 const canvas = document.getElementById('canvas_main') as HTMLCanvasElement;
 
 export interface Controlable {
-    control: (keys: Record<string, boolean>, plc: PointerLockControls) => void;
+    control: (controler: Controller) => void;
 }
 
 export class Controller {
     keys: Record<string, boolean> = {};
+    keydown: Record<string, boolean> = {};
     pointorLockControls: PointerLockControls;
     controlable: Controlable[] = [];
     camera: THREE.Camera;
@@ -33,6 +34,12 @@ export class Controller {
 
         document.addEventListener('keydown', e => {
             this.keys[e.code] = true;
+            this.keydown[e.code] = true;
+            if (e.code === 'KeyR') {
+                const q = new THREE.Quaternion();
+                q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI/2);
+                this.camera.quaternion.premultiply(q);
+            }
             this.control_callback();
         });
 
@@ -65,7 +72,7 @@ export class Controller {
 
     control_callback() {
         for (const c of this.controlable) {
-            c.control(this.keys, this.pointorLockControls);
+            c.control(this);
         }
     }
 }

@@ -4,7 +4,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 
 import type { Entity } from './entity';
 import { GameState } from '../state';
-import type { Controlable } from '../control';
+import type { Controlable, Controller } from '../control';
 import { CuboidEntity } from './cuboid';
 
 export class Player implements Entity, Controlable {
@@ -14,6 +14,8 @@ export class Player implements Entity, Controlable {
 
     movementSpeed: number = 5;
     jumpStrength: number = 5;
+    zoneSwitched: boolean = false;
+    switchZoneCooldown: number = 0;
 
     state: GameState;
 
@@ -37,8 +39,11 @@ export class Player implements Entity, Controlable {
     minPlayerCubeDistance: number = 1.8;
     floorCloseThreshold: number = 0.25;
     floorBiasedRatio: number = 0.90;
+    noclip: boolean = false;
 
     direction = new THREE.Vector3();
+
+    raycaster = new THREE.Raycaster();
 
     constructor(state: GameState, position: THREE.Vector3 = new THREE.Vector3(0, 1.3, 0)) {
         this.state = state;
@@ -58,22 +63,47 @@ export class Player implements Entity, Controlable {
         this.camera.position.copy(position);
     }
 
-    control(keys: Record<string, boolean>, plc: PointerLockControls) {
+    control(c: Controller) {
         const vel = this.body.linvel();
         const move = new THREE.Vector3();
+        if (c.keydown['KeyF']) {
+            this.noclip = !this.noclip;
+            this.body.setGravityScale(this.noclip ? 0 : 1, true);
+            //this.body.setEnabledTranslations(true, true, true, true);
+            this.body.collider(0).setSensor(this.noclip);
+        }
 
-        if (keys['KeyW']) move.z += 1;
-        if (keys['KeyS']) move.z -= 1;
-        if (keys['KeyA']) move.x += 1;
-        if (keys['KeyD']) move.x -= 1;
-        if (keys['MouseLeft']) {
+        if (this.noclip) {
+            const move = new THREE.Vector3();
+            c.pointorLockControls.getDirection(this.direction);
+            if (c.keys['KeyW']) move.addScaledVector(this.direction, 1);
+            if (c.keys['KeyS']) move.addScaledVector(this.direction, -1);
+            if (c.keys['KeyA']) {
+                const left = this.direction.clone().cross(new THREE.Vector3(0,1,0)).negate();
+                move.addScaledVector(left, 1);
+            }
+            if (c.keys['KeyD']) {
+                const right = this.direction.clone().cross(new THREE.Vector3(0,1,0));
+                move.addScaledVector(right, 1);
+            }
+            if (move.lengthSq() > 0) move.normalize().multiplyScalar(this.movementSpeed);
+            const pos = this.body.translation();
+            this.body.setTranslation({ x: pos.x + move.x * 0.016, y: pos.y + move.y * 0.016, z: pos.z + move.z * 0.016 }, true);
+            this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+            return;
+         }
+        if (c.keys['KeyW']) move.z += 1;
+        if (c.keys['KeyS']) move.z -= 1;
+        if (c.keys['KeyA']) move.x += 1;
+        if (c.keys['KeyD']) move.x -= 1;
+        if (c.keys['MouseLeft']) {
             this.pickObject();
         }
-        if (keys['MouseLeft'] === false) {
+        if (c.keys['MouseLeft'] === false) {
             this.dropObject();
         }
 
-        plc.getDirection(this.direction);
+        c.pointorLockControls.getDirection(this.direction);
 
         const yaw = Math.atan2(this.direction.x, this.direction.z);
         move.applyEuler(new THREE.Euler(0, yaw, 0));
@@ -82,7 +112,7 @@ export class Player implements Entity, Controlable {
             move.normalize().multiplyScalar(this.movementSpeed);
         }
 
-        const jump = keys['Space'] && Math.abs(vel.y) < 0.05 ? this.jumpStrength : 0;
+        const jump = c.keys['Space'] && Math.abs(vel.y) < 0.05 ? this.jumpStrength : 0;
 
         this.body.setLinvel(
             {
@@ -96,11 +126,64 @@ export class Player implements Entity, Controlable {
 
     update(delta: number) {
         const position = this.body.translation();
+        this.switchZoneCooldown = Math.max(0, this.switchZoneCooldown - delta);
 
         this.camera.position.set(position.x, position.y + 0.5, position.z);
 
+        this.checkWallInFront();
         if (this.heldObject !== null) {
             this.moveHeldObject(delta);
+        }
+    }
+
+    private switchZone() {
+        if (this.switchZoneCooldown > 0) return;
+        const shape = new RAPIER.Capsule(0.35, 0.35);
+        let pos = this.body.translation();
+        const shapeRot = this.body.rotation();
+        if (this.zoneSwitched)
+            pos.x -= 10;
+        else
+            pos.x += 10;
+
+         const hit = this.state.world.intersectionWithShape(
+                pos,
+                shapeRot,
+                shape,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+            );
+            if (hit) {
+                return;
+            }
+            this.body.setTranslation(pos, true);
+        this.zoneSwitched = !this.zoneSwitched;
+        this.switchZoneCooldown = 1.0;
+    }
+
+    private updateRaycaster() {
+        this.raycaster.set(this.camera.position, this.direction);
+    }
+
+    private checkWallInFront() {
+        this.updateRaycaster();
+        const intersects = this.raycaster.intersectObjects(this.state.scene.children, true);
+        if (intersects.length > 0) {
+            const hit = intersects[0];
+            const worldNormal = hit.face?.normal.clone().transformDirection(hit.object.matrixWorld);
+            const angle = worldNormal ? this.direction.angleTo(worldNormal) : null;
+            const mesh = hit.object as THREE.Mesh;
+            const color = (mesh.material as THREE.MeshStandardMaterial).color;
+            const isGreen = color.g > 0.8 && color.r < 0.2 && color.b < 0.2;
+            //console.log('distance:', hit.distance, 'angle', angle, 'color:', (mesh.material as THREE.MeshStandardMaterial).color);
+            if (hit.distance < 0.5 && angle !== null && ( angle < Math.PI * 0.1 || angle > Math.PI * 0.9) && isGreen) {
+                console.log('Switching zone!');
+                this.switchZone();
+
+            }
         }
     }
 
@@ -156,7 +239,6 @@ export class Player implements Entity, Controlable {
         direction.normalize();
 
         let origin = this.camera.position.clone();
-        let or
 
         const wallSearchDistance = 100.0;
         const minHoldDistance = 1.2;
@@ -303,4 +385,80 @@ export class Player implements Entity, Controlable {
 
         this.heldObject.setScale(this.state, finalScale);
     }
+
+    // The trail rolled left (r l r l l l)
+    // 오른쪽으로 돌면 1->2->3->4->1, 왼쪽으로 돌면 1->4->3->2->1
+    lastCheckPoint = 1;
+    puzzleSeqOrigin = [true, false, true, false, false, false]; // 오른쪽은 true, 왼쪽은 false
+    puzzleProgress = 0;
+    backToStart = false;
+
+    successPuzzle() {
+        let pos = this.body.translation();
+        pos.x += 25;
+        this.body.setTranslation(pos, true);
+    }
+
+    failPuzzle(checkPointNumber: number) {
+        console.log('Failed puzzle at checkpoint', checkPointNumber);
+        let pos = this.body.translation();
+        let relativePos = new THREE.Vector3;
+        this.camera.rotation.order = 'YXZ';
+        if (checkPointNumber === 4) {
+            relativePos.set(pos.x - 42.114, pos.y - 1.5, pos.z + 44);
+            relativePos.applyEuler(new THREE.Euler(0, Math.PI/2, 0));
+            const q = new THREE.Quaternion();
+            q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI/2);
+            this.camera.quaternion.premultiply(q);
+            this.camera.rotation.set(this.camera.rotation.x, this.camera.rotation.y, 0, 'YXZ');
+            // pos.x -=43.9501;
+        }
+        if (checkPointNumber === 2) {
+            relativePos.set(pos.x - 23.614, pos.y - 1.5, pos.z + 25.5);
+            relativePos.applyEuler(new THREE.Euler(0, -Math.PI/2, 0));
+            const q = new THREE.Quaternion();
+            q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI/2);
+            this.camera.quaternion.premultiply(q);
+            this.camera.rotation.set(this.camera.rotation.x, this.camera.rotation.y, 0, 'YXZ');
+        }
+        this.camera.rotation.order = 'YXZ';
+        pos.x = relativePos.x - 1.3861;
+        pos.y = relativePos.y + 1.5;
+        pos.z = relativePos.z - 44;
+        this.puzzleProgress = 0;
+        this.body.setTranslation(pos, true);
+    }
+
+    enterCheckPoint(checkPointNumber: number) {
+        if (checkPointNumber === this.lastCheckPoint) {
+            return;
+        }
+        let turnRight = null;
+        if (checkPointNumber === 1) {
+            this.backToStart = true;
+        }
+        if (checkPointNumber === 4 && this.lastCheckPoint === 3 && this.backToStart) {
+            turnRight = true;
+            console.log('turning right');
+            this.backToStart = false;
+        }
+        if (checkPointNumber === 2 && this.lastCheckPoint === 3 && this.backToStart) {
+            turnRight = false;
+            console.log('turning left');
+            this.backToStart = false;
+        }
+        if (turnRight !== null) {
+            const expectedTurn = this.puzzleSeqOrigin[this.puzzleProgress];
+            if (turnRight === expectedTurn) {
+                this.puzzleProgress += 1;
+                if (this.puzzleProgress === this.puzzleSeqOrigin.length) {
+                    this.successPuzzle();
+                }
+            } else {
+                this.failPuzzle(checkPointNumber);
+            }
+        }
+        this.lastCheckPoint = checkPointNumber;
+    }
+
 }
