@@ -18,21 +18,15 @@ function state_first(map: Map): GameState {
     map.addToScene(state);
     const player = new Player(state);
 
-    function enterLoop() {
-        let pos = player.body.translation();
-        pos.x += 25;
-        player.body.setTranslation(pos, true);
-    }
-
     state.spawnEntity(
-        new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(17.114, 1.5, -44), enterLoop, new Set([player.body.collider(0).handle]))
+        new DetectorEntity(state, new THREE.Vector3(2.5, 2.5, 2.5), new THREE.Vector3(17.114, 1.5, -44), () => {player.enterLoop()} , new Set([player.body]), false)
     );
 
     state.spawnEntity(
-        [new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(42.114, 1.5, -44), () => {player.enterCheckPoint(4)}, new Set([player.body.collider(0).handle])),
-         new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(42.114, 1.5, -25.5), () => {player.enterCheckPoint(1)}, new Set([player.body.collider(0).handle])),
-         new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(23.614, 1.5, -25.5), () => {player.enterCheckPoint(2)}, new Set([player.body.collider(0).handle])),
-         new DetectorEntity(state, new THREE.Vector3(3, 3, 3), new THREE.Vector3(23.614, 1.5, -44), () => {player.enterCheckPoint(3)}, new Set([player.body.collider(0).handle])),
+        [new DetectorEntity(state, new THREE.Vector3(2.5, 2.5, 2.5), new THREE.Vector3(42.114, 1.5, -44), () => {player.enterCheckPoint(4)}, new Set([player.body]), false),
+         new DetectorEntity(state, new THREE.Vector3(2.5, 2.5, 2.5), new THREE.Vector3(42.114, 1.5, -25.5), () => {player.enterCheckPoint(1)}, new Set([player.body]), false),
+         new DetectorEntity(state, new THREE.Vector3(2.5, 2.5, 2.5), new THREE.Vector3(23.614, 1.5, -25.5), () => {player.enterCheckPoint(2)}, new Set([player.body]), false),
+         new DetectorEntity(state, new THREE.Vector3(2.5, 2.5, 2.5), new THREE.Vector3(23.614, 1.5, -44), () => {player.enterCheckPoint(3)}, new Set([player.body]), false),
         ]
     );
 
@@ -53,7 +47,7 @@ function state_second(map: Map): GameState {
         [new CuboidEntity(state, new THREE.Vector3(0.5, 0.5, 0.5), new THREE.Vector3(0, 1, 0)),
          new CuboidEntity(state, new THREE.Vector3(0.5, 0.5, 0.5), new THREE.Vector3(2, 1, 0)),
          new CuboidEntity(state, new THREE.Vector3(0.05, 0.1, 1.0), new THREE.Vector3(2, 1, 0)),
-         new DetectorEntity(state, new THREE.Vector3(2, 2, 2), new THREE.Vector3(7, 1, -1), () => {state.controller.pointorLockControls.unlock(); curState = state_first(map1); console.log("colide")}, new Set([player.body.collider(0).handle]), true)]
+         new DetectorEntity(state, new THREE.Vector3(2, 2, 2), new THREE.Vector3(7, 1, -1), () => {state.controller.pointorLockControls.unlock(); curState = state_first(map1); console.log("colide")}, new Set([player.body]), true)]
     );
 
     return state;

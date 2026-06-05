@@ -12,7 +12,7 @@ export class DetectorEntity implements Entity {
     visible: boolean = false;
     size: THREE.Vector3;
     detect_callback: (() => void) | null = null;
-    to_detect: Set<number> = new Set();
+    to_detect: Set<RAPIER.RigidBody> = new Set();
     queryShape: RAPIER.Cuboid;
     queryPos: RAPIER.Vector3
     queryRot: RAPIER.Quaternion;
@@ -22,7 +22,7 @@ export class DetectorEntity implements Entity {
         size: THREE.Vector3 = new THREE.Vector3(1, 1, 1),
         position: THREE.Vector3 = new THREE.Vector3(0, 0, 0),
         callback: (() => void) | null = null,
-        to_detect: Set<number> = new Set(),
+        to_detect: Set<RAPIER.RigidBody> = new Set(),
         visible: boolean = false,
         material: THREE.Material = new THREE.MeshStandardMaterial({ color: 0xff0000 }),
     ) {
@@ -53,21 +53,20 @@ export class DetectorEntity implements Entity {
     }
 
     update(_: number) {
+        const c = this.body.translation();
+        const hx = this.size.x / 2;
+        const hy = this.size.y / 2;
+        const hz = this.size.z / 2;
 
-        this.state.world.intersectionsWithShape(
-            this.queryPos,
-            this.queryRot,
-            this.queryShape,
-            (other) => {
-                if (this.to_detect.has(other.handle) && this.detect_callback) {
-                    this.detect_callback();
-                }
-                return true;   // 계속 순회
-            },
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-        );
+        for (const body of this.to_detect) {
+            const p = body.translation();
+            if (
+                Math.abs(p.x - c.x) <= hx &&
+                Math.abs(p.y - c.y) <= hy &&
+                Math.abs(p.z - c.z) <= hz
+            ) {
+                this.detect_callback?.();
+            }
+        }
     }
 }

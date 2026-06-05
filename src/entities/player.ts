@@ -76,8 +76,8 @@ export class Player implements Entity, Controlable {
         const move = new THREE.Vector3();
 
         if (c.keydown['KeyF']) {
-            //this.noclip = !this.noclip;
-            //this.collider.setSensor(this.noclip);
+            this.noclip = !this.noclip;
+            this.collider.setSensor(this.noclip);
         }
 
         if (this.noclip) {
@@ -433,6 +433,14 @@ export class Player implements Entity, Controlable {
         pos.x += 25;
         this.body.setTranslation(pos, true);
     }
+
+     enterLoop() {
+        let pos = this.body.translation();
+        pos.x += 25;
+        this.body.setTranslation(pos, true);
+        console.log("enter loop");
+    }
+
 
     failPuzzle(checkPointNumber: number) {
         console.log('Failed puzzle at checkpoint', checkPointNumber);
