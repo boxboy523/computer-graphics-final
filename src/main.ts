@@ -2,7 +2,6 @@ import * as THREE from 'three';
 
 import { GameState } from './state';
 import { Map } from './map';
-import { CuboidEntity } from './entities/cuboid';
 import { DetectorEntity } from './entities/detector';
 import { Player } from './entities/player';
 
